@@ -4,6 +4,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain, SequentialChain
 from langchain_google_genai import ChatGoogleGenerativeAI
 import concurrent.futures
+from dotenv import load_dotenv
+
+load_dotenv()  # .env ファイルから環境変数を読み込み
 
 # 他のプロバイダ向けも同様にインポート可能
 # from langchain_deepseek import ChatDeepSeek

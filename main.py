@@ -1,4 +1,4 @@
 from utils import sample, WORKFLOW
 
-sample(WORKFLOW.PARALLEL, "ブロックチェーン")
+sample(WORKFLOW.EVALUATION_OPTIMIZER, "ブロックチェーン")
 # print(result)
