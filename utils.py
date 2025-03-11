@@ -1,8 +1,12 @@
+from typing import Optional, Union, List, Dict, Any
+from pathlib import Path
+import base64
 from enum import Enum
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain, SequentialChain
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage
 import concurrent.futures
 from dotenv import load_dotenv
 
@@ -20,6 +24,7 @@ class WORKFLOW(Enum):
     PARALLEL = "parallel"
     ORCHESTRATION = "orchestration"
     EVALUATION_OPTIMIZER = "evaluation"
+    IMAGE = "image"
 
 
 ########################################
@@ -28,29 +33,67 @@ class WORKFLOW(Enum):
 def sample(workflow: WORKFLOW, topic: str = "ブロックチェーン"):
     if workflow == WORKFLOW.PROMPT:
         print("=== プロンプトチェーン ===")
+        print(
+            "説明: 指定されたトピックに基づいて、一連のプロンプトチェーンを実行します。"
+        )
         print(prompt_chain_workflow(topic))
     elif workflow == WORKFLOW.ROUTING:
         print("\n=== ルーティング ===")
+        print(
+            "説明: トピックに対して質問形式に変換し、適切なルーティング処理を行います。"
+        )
         print(routing_workflow(question=f"{topic}とは？"))
     elif workflow == WORKFLOW.PARALLEL:
         print("\n=== 並列化 ===")
+        print("説明: 複数のサブタスクを並列に実行し、処理の効率化を図ります。")
         subtasks = [f"{i} * 100 = ?" for i in range(5)]
         print(parallel_workflow(task="計算してください", subtasks=subtasks))
     elif workflow == WORKFLOW.ORCHESTRATION:
         print("\n=== オーケストレーション ===")
+        print(
+            "説明: 複数のタスクをシーケンシャルに連携して実行し、全体の流れを管理します。"
+        )
         task_str = "\n".join(f"問{i}. 100 * {i} = ?" for i in range(5))
         print(orchestration_workflow(task=task_str))
     elif workflow == WORKFLOW.EVALUATION_OPTIMIZER:
         print("\n=== 自律型評価オプティマイザー ===")
+        print("説明: 自律的に評価を行い、最適化されたフィードバックを提供します。")
         print(evaluation_optimizer_workflow(question=topic))
+    elif workflow == WORKFLOW.IMAGE:
+        print("\n=== 画像解析 ===")
+        print("説明: 画像を解析して説明文を生成します。")
+        # result1 = analyze_image(
+        #     prompt="この画像に何が写っていますか？詳細に説明してください。",
+        #     image_path="C:/Users/y.kuwahara/Pictures/014桑原さん/IMG_8399.JPG",
+        #     provider="openai",
+        # )
+        # print(result1)
+        # result2 = analyze_image(
+        #     prompt="この画像の内容を読み込んでhtmlに変換してください。",
+        #     image_url="https://highreso.jp/edgehub/wp-content/uploads/2024/10/geminiapi_capture_5.jpg",
+        #     provider="gemini",
+        # )
+        # print(result2)
+        # 複数の画像を分析
+        result3 = analyze_image(
+            prompt="これらの画像の違いを説明してください。",
+            image_path="./files/sample.jpeg",
+            additional_images=[
+                "./files/sample_2.jpeg",
+            ],
+        )
+        print(result3)
     else:
-        print("Unknown workflow")
+        print("Unknown workflow. 指定されたワークフローが認識されません。")
 
 
-def get_llm(provider: str = None, model: str = None, **kwargs):
+def get_llm(
+    provider: str = None, model: str = None, reasoning_effort: str = None, **kwargs
+):
     # provider が未指定の場合は "gemini" をデフォルトとする
     if not provider:
         provider = "gemini"
+        # provider = "openai"
     # model が未指定の場合、provider に応じたデフォルト値を設定する
     if not model:
         if provider == "openai":
@@ -58,8 +101,9 @@ def get_llm(provider: str = None, model: str = None, **kwargs):
         elif provider == "gemini":
             model = "gemini-2.0-flash"
 
+    print(f"provider: {provider}, model: {model}")
     if provider == "openai":
-        return ChatOpenAI(model=model, **kwargs)
+        return ChatOpenAI(model=model, reasoning_effort=reasoning_effort, **kwargs)
     elif provider == "gemini":
         return ChatGoogleGenerativeAI(model=model, **kwargs)
     else:
@@ -322,3 +366,88 @@ def evaluation_optimizer_workflow(question: str, iterations: int = 2):
         )["answer"]
 
     return {"final_answer": current_answer, "latest_feedback": feedback}
+
+
+########################################
+# 6. 画像分析
+########################################
+def analyze_image(
+    prompt: str,
+    image_path: Optional[Union[str, Path]] = None,
+    image_url: Optional[str] = None,
+    provider: str = None,
+    model: Optional[str] = None,
+    additional_images: Optional[List[Union[str, Path]]] = None,
+    additional_urls: Optional[List[str]] = None,
+) -> str:
+    # 少なくとも1つの画像ソースが必要
+    if not image_path and not image_url:
+        raise ValueError("少なくとも1つの画像パスまたはURLを指定してください")
+
+    # プロバイダとモデルの設定
+    if provider is not None and provider.lower() == "openai" and model is None:
+        model = "gpt-4o"
+    llm = get_llm(provider, model=model)
+
+    # メッセージコンテンツの準備
+    content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+
+    # ローカル画像ファイルの処理
+    if image_path:
+        content.append(_process_local_image(image_path))
+
+    # 画像URLの処理
+    if image_url:
+        content.append(_process_image_url(image_url))
+
+    # 追加の画像の処理
+    if additional_images:
+        for img_path in additional_images:
+            content.append(_process_local_image(img_path))
+
+    # 追加のURLの処理
+    if additional_urls:
+        for url in additional_urls:
+            content.append(_process_image_url(url))
+
+    # メッセージの作成と実行
+    message = HumanMessage(content=content)
+    response = llm.invoke([message])
+
+    return response.content
+
+
+def _process_local_image(image_path: Union[str, Path]) -> Dict[str, Any]:
+    """ローカル画像ファイルをbase64エンコードしてメッセージコンテンツに変換"""
+    image_path = Path(image_path)
+    if not image_path.exists():
+        raise FileNotFoundError(f"画像ファイルが見つかりません: {image_path}")
+
+    with open(image_path, "rb") as image_file:
+        base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+
+    mime_type = _get_mime_type(image_path)
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:{mime_type};base64,{base64_image}"},
+    }
+
+
+def _process_image_url(url: str) -> Dict[str, Any]:
+    """画像URLをメッセージコンテンツに変換"""
+    return {"type": "image_url", "image_url": {"url": url}}
+
+
+def _get_mime_type(image_path: Path) -> str:
+    """ファイル拡張子からMIMEタイプを推測"""
+    extension = image_path.suffix.lower()
+    mime_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+    }
+    #  未知の拡張子の場合はデフォルトのjpegを返す
+    return mime_types.get(extension, "image/jpeg")  # デフォルトはjpeg
